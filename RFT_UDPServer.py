@@ -1,5 +1,11 @@
 import socket, struct, threading, time, hashlib, os
-from packet import build_ip_header, build_udp_header, build_app_header, parse_app_header
+from packet import (
+    build_ip_header,
+    build_udp_header,
+    build_app_header,
+    parse_app_header,
+    calc_checksum,
+)
 from constants import *
 
 
@@ -109,9 +115,20 @@ class RFTServer:
                         udp_header = build_udp_header(
                             SERVER_PORT, CLIENT_PORT, len(chunks[next_seq])
                         )
+
+                        # Initial app header
                         app_header = build_app_header(
                             next_seq, 0, Flag.DATA, len(chunks[next_seq]), 0
-                        )  # TODO: handle checksum
+                        )
+                        # Calculate checksum for app header + chunk
+                        checksum = calc_checksum(app_header + chunks[next_seq])
+
+                        # Remake app header with calculated checksum
+                        # Initial app header
+                        app_header = build_app_header(
+                            next_seq, 0, Flag.DATA, len(chunks[next_seq]), checksum
+                        )
+
                         # Concatonate headers with payload into packet
                         packet = ip_header + udp_header + app_header + chunks[next_seq]
                         # Send and store packet, increment counters
