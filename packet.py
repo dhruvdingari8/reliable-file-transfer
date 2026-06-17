@@ -83,3 +83,18 @@ def build_udp_header(src_port: int, dst_port: int, data_length: int) -> bytes:
     header = struct.pack(">HHHH", src_port, dst_port, length, checksum)
 
     return header
+
+def build_app_header(seq: int, ack: int, flags: int, data_length: int, chk: int) -> bytes:
+    """
+    Builds the header of an application
+    """
+    
+    header = struct.pack(">IIBHH", seq, ack, flags, data_length, chk)
+    return header
+
+def parse_app_header(data: bytes) -> tuple:
+    """
+    Parses the header of an application into a tuple.
+    """
+    
+    return struct.unpack(">IIBHH", data[:13])
