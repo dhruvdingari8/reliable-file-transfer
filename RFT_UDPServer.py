@@ -56,7 +56,7 @@ class RFTServer:
         # Get file size
         self.file_size = os.path.getsize(filename)
 
-        # Computer MD5 hash
+        # Compute MD5 hash
         md5 = hashlib.md5()
         with open(filename, "rb") as f:
             while chunk := f.read(8192):
