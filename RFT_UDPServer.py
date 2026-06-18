@@ -79,7 +79,7 @@ class RFTServer:
         # Send file
         self.send_file(filename, client_ip)
 
-        output_path = self.write_report(filename, 0)
+        output_path = self.write_report(filename, 2)
         print(f"Report written, found at {output_path}.")
 
     def send_file(self, filename, client_ip):
@@ -134,38 +134,32 @@ class RFTServer:
                             next_seq, 0, Flag.DATA, len(chunks[next_seq]), checksum
                         )
 
-                        print(f"Self-verify: {calc_checksum(app_header + chunks[next_seq]):#06x}")
+                        # print(f"Self-verify: {calc_checksum(app_header + chunks[next_seq]):#06x}")
 
                         # Concatonate headers with payload into packet
                         packet = ip_header + udp_header + app_header + chunks[next_seq]
 
-                        print(f"Sending chunk {next_seq}, checksum: {checksum:#06x}, data_length: {len(chunks[next_seq])}")
+                        # print(f"Sending chunk {next_seq}, checksum: {checksum:#06x}, data_length: {len(chunks[next_seq])}")
 
                         # Send and store packet, increment counters
                         self.socket.sendto(packet, (client_ip, 0))
-                        print(f"Sent chunk {next_seq} to {client_ip}")
+                        # print(f"Sent chunk {next_seq} to {client_ip}")
                         unacked[next_seq] = (packet, time.time())
                         next_seq += 1
                         self.packets_sent += 1
 
                 if next_seq - base >= WINDOW_SIZE or next_seq >= total_chunks:
-                    # NOTE: next_seq and base are read here outside the lock, which introduces a minor
-                    # race condition with the ACK receiver thread. In the worst case this causes an
-                    # unnecessary wait or a skipped wait, but does not affect correctness.
-
-                    # There is no space. Window is full.
-                    # Wait on ack_received until timeout
                     ack_received.wait(TIMEOUT)
                     ack_received.clear()
+                    
+                    with lock:
+                        for seq, (packet, timestamp) in list(unacked.items()):
+                            if time.time() - timestamp > TIMEOUT:
+                                self.socket.sendto(packet, (client_ip, 0))
+                                unacked[seq] = (packet, time.time())
+                                self.packets_retransmitted += 1
 
                 with lock:
-                    for seq, (packet, timestamp) in list(unacked.items()):
-                        if time.time() - timestamp > TIMEOUT:
-                            self.socket.sendto(packet, (client_ip, 0))
-                            unacked[seq] = (packet, time.time())
-                            self.packets_retransmitted += 1
-
-                    # Check if transmission is done yet
                     if base == total_chunks:
                         done.set()
 

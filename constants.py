@@ -3,8 +3,8 @@ from enum import IntEnum
 SERVER_PORT = 6767
 CLIENT_PORT = 7676
 CHUNK_SIZE = 1400
-WINDOW_SIZE = 64
-TIMEOUT = 1
+WINDOW_SIZE = 16
+TIMEOUT = 0.5
 
 
 class Flag(IntEnum):

@@ -31,7 +31,7 @@ class RFTClient:
         packet = headers + app_header + payload
 
         self.socket.sendto(packet, (self.server_ip, 0))
-        print(f"File Request for file {filename} sent to IP {self.server_ip}")
+        # print(f"File Request for file {filename} sent to IP {self.server_ip}")
 
         # Receive file packets
         self.receive_file(filename)
@@ -53,8 +53,9 @@ class RFTClient:
             
             seq, ack, flags, data_length, chk = parse_app_header(app_header_data)
             src_ip = socket.inet_ntoa(packet[12:16])
-            if src_ip == self.server_ip:
-                print(f"Client parsed: seq={seq}, flags={flags}, data_length={data_length}, chk={chk:#06x}")
+            
+            # if src_ip == self.server_ip:
+            #     print(f"Client parsed: seq={seq}, flags={flags}, data_length={data_length}, chk={chk:#06x}")
 
             payload = packet[42:42 + data_length]
 
