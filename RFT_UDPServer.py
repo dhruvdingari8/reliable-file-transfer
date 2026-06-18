@@ -11,7 +11,7 @@ from constants import *
 
 class RFTServer:
     def __init__(self, server_ip):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
         self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 
         self.server_ip = server_ip
@@ -28,14 +28,17 @@ class RFTServer:
 
         while True:
             raw_data, client_addr = self.socket.recvfrom(65535)
+            # print(f"Received packet from {client_addr}, length {len(raw_data)}")
             ip_header = raw_data[:20]
             udp_header = raw_data[20:28]
-            app_header_data = raw_data[28:41]
-            payload = raw_data[41:]
+            app_header_data = raw_data[28:42]
+            payload = raw_data[42:]
 
             seq, ack, flags, data_length, chk = parse_app_header(app_header_data)
 
             dst_port = struct.unpack(">H", udp_header[2:4])[0]
+            dst_port = struct.unpack(">H", udp_header[2:4])[0]
+            # print(f"dst_port: {dst_port}, flags: {flags}")
 
             if dst_port != SERVER_PORT:
                 continue
@@ -53,6 +56,7 @@ class RFTServer:
         - Calculates needed chunks to send
         - Starts file transfer by calling send_file
         """
+        print(f"Handling request for {filename} from {client_ip}")
 
         # Check if file exists, print an error and return if not
         if not os.path.exists(filename):
@@ -84,6 +88,7 @@ class RFTServer:
 
         Spawns two threads, one to send packets and one to listen to ACKS. Also handles retransmissions when a timeout fires.
         """
+        print(f"Sending file {filename} to {client_ip}")
 
         # Shared State Variables
         base = 0  # Lowest unacked sequence number (left edge of window)
@@ -124,15 +129,21 @@ class RFTServer:
                         checksum = calc_checksum(app_header + chunks[next_seq])
 
                         # Remake app header with calculated checksum
-                        # Initial app header
+                        # Final app header
                         app_header = build_app_header(
                             next_seq, 0, Flag.DATA, len(chunks[next_seq]), checksum
                         )
 
+                        print(f"Self-verify: {calc_checksum(app_header + chunks[next_seq]):#06x}")
+
                         # Concatonate headers with payload into packet
                         packet = ip_header + udp_header + app_header + chunks[next_seq]
+
+                        print(f"Sending chunk {next_seq}, checksum: {checksum:#06x}, data_length: {len(chunks[next_seq])}")
+
                         # Send and store packet, increment counters
                         self.socket.sendto(packet, (client_ip, 0))
+                        print(f"Sent chunk {next_seq} to {client_ip}")
                         unacked[next_seq] = (packet, time.time())
                         next_seq += 1
                         self.packets_sent += 1
@@ -171,7 +182,7 @@ class RFTServer:
                     continue
 
                 udp_header = raw_data[20:28]
-                app_header_data = raw_data[28:41]
+                app_header_data = raw_data[28:42]
 
                 seq, ack, flags, data_length, chk = parse_app_header(app_header_data)
 
@@ -207,9 +218,11 @@ class RFTServer:
 
         # Send FIN packet
         # Build headers
-        ip_header = build_ip_header(self.server_ip, client_ip, 13)
-        udp_header = build_udp_header(SERVER_PORT, CLIENT_PORT, 13)
+        ip_header = build_ip_header(self.server_ip, client_ip, 14)
+        udp_header = build_udp_header(SERVER_PORT, CLIENT_PORT, 14)
         app_header = build_app_header(total_chunks, 0, Flag.FIN, 0, 0)
+        chk = calc_checksum(app_header)
+        app_header = build_app_header(total_chunks, 0, Flag.FIN, 0, chk)
         fin_packet = ip_header + udp_header + app_header
         self.socket.sendto(fin_packet, (client_ip, 0))
         print("File transfer complete, FIN sent")

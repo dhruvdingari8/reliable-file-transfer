@@ -17,11 +17,11 @@ def calc_checksum(byte_string: bytes) -> int:
         total += word
 
     # Fold overflow
-    total = (total >> 16) + (total & 0xFFFF)
-    total += total >> 16
+    while total >> 16:
+        total = (total >> 16) + (total & 0xFFFF)
 
-    return ~total & 0xFFFF
-
+    result = ~total & 0xFFFF
+    return 0xFFFF if result == 0 else result
 
 def build_ip_header(src_ip: str, dst_ip: str, data_length: int) -> bytes:
     """
@@ -89,12 +89,12 @@ def build_app_header(seq: int, ack: int, flags: int, data_length: int, chk: int)
     Builds the header of an application
     """
     
-    header = struct.pack(">IIBHH", seq, ack, flags, data_length, chk)
+    header = struct.pack(">IIBxHH", seq, ack, flags, data_length, chk)
     return header
 
 def parse_app_header(data: bytes) -> tuple:
     """
     Parses the header of an application into a tuple.
     """
-    
-    return struct.unpack(">IIBHH", data[:13])
+
+    return struct.unpack(">IIBxHH", data[:14])
