@@ -224,4 +224,4 @@ __marimo__/
 test.txt
 received_*
 
-test_*
+*.bin

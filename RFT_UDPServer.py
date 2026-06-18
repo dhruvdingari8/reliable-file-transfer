@@ -79,7 +79,7 @@ class RFTServer:
         # Send file
         self.send_file(filename, client_ip)
 
-        output_path = self.write_report(filename, 2)
+        output_path = self.write_report(filename, 4)
         print(f"Report written, found at {output_path}.")
 
     def send_file(self, filename, client_ip):
@@ -107,51 +107,46 @@ class RFTServer:
         def sender():
             nonlocal base, next_seq
 
+            start_time = time.time()
+            packet_to_send = None
+
             while not done.is_set():
-                # Acquire lock
                 with lock:
-                    # Check if window has space
                     if next_seq - base < WINDOW_SIZE and next_seq < total_chunks:
-                        # There is space. Build and send the next packet
-                        # Build headers first
                         ip_header = build_ip_header(
                             self.server_ip, client_ip, len(chunks[next_seq])
                         )
                         udp_header = build_udp_header(
                             SERVER_PORT, CLIENT_PORT, len(chunks[next_seq])
                         )
-
-                        # Initial app header
                         app_header = build_app_header(
                             next_seq, 0, Flag.DATA, len(chunks[next_seq]), 0
                         )
-                        # Calculate checksum for app header + chunk
                         checksum = calc_checksum(app_header + chunks[next_seq])
-
-                        # Remake app header with calculated checksum
-                        # Final app header
                         app_header = build_app_header(
                             next_seq, 0, Flag.DATA, len(chunks[next_seq]), checksum
                         )
-
-                        # print(f"Self-verify: {calc_checksum(app_header + chunks[next_seq]):#06x}")
-
-                        # Concatonate headers with payload into packet
-                        packet = ip_header + udp_header + app_header + chunks[next_seq]
-
-                        # print(f"Sending chunk {next_seq}, checksum: {checksum:#06x}, data_length: {len(chunks[next_seq])}")
-
-                        # Send and store packet, increment counters
-                        self.socket.sendto(packet, (client_ip, 0))
-                        # print(f"Sent chunk {next_seq} to {client_ip}")
-                        unacked[next_seq] = (packet, time.time())
+                        packet_to_send = ip_header + udp_header + app_header + chunks[next_seq]
+                        unacked[next_seq] = (packet_to_send, time.time())
                         next_seq += 1
                         self.packets_sent += 1
+
+                        if next_seq % 1000 == 0:
+                            elapsed = time.time() - start_time
+                            rate = next_seq / elapsed if elapsed > 0 else 0
+                            eta = (total_chunks - next_seq) / rate if rate > 0 else 0
+                            print(f"Progress: {next_seq}/{total_chunks} chunks | {elapsed:.1f}s elapsed | ETA: {eta:.1f}s")
+                    else:
+                        packet_to_send = None
+
+                # Send outside the lock
+                if packet_to_send:
+                    self.socket.sendto(packet_to_send, (client_ip, 0))
 
                 if next_seq - base >= WINDOW_SIZE or next_seq >= total_chunks:
                     ack_received.wait(TIMEOUT)
                     ack_received.clear()
-                    
+
                     with lock:
                         for seq, (packet, timestamp) in list(unacked.items()):
                             if time.time() - timestamp > TIMEOUT:
@@ -218,7 +213,11 @@ class RFTServer:
         chk = calc_checksum(app_header)
         app_header = build_app_header(total_chunks, 0, Flag.FIN, 0, chk)
         fin_packet = ip_header + udp_header + app_header
-        self.socket.sendto(fin_packet, (client_ip, 0))
+
+        # Sending multiple times to prevent packet drop
+        for _ in range(5):
+            self.socket.sendto(fin_packet, (client_ip, 0))
+            time.sleep(0.1)
         print("File transfer complete, FIN sent")
 
     def write_report(self, filename, loss_pct) -> str:
